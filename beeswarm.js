@@ -6,7 +6,7 @@ import csv from 'csv-parser';
 async function readCSV(filePath) {
     const results = [];
     return new Promise((resolve, reject) => {
-        fs.createReadStream(filePath) // Use the standard 'fs' module here
+        fs.createReadStream(filePath)
             .pipe(csv())
             .on('data', (data) => results.push(data))
             .on('end', () => resolve(results))
@@ -14,28 +14,29 @@ async function readCSV(filePath) {
     });
 }
 
-
-
-async function generateChart() {
+async function generateBeeswarmChart() {
     const browser = await puppeteer.launch({
         headless: false,
     });
 
     try {
-        const filePath = path.resolve('data/bubblechart/data.csv');
+
+        // Adjust the file path according to your data location
+        const filePath = path.resolve('data/beeswarm/data.csv');
         const data = await readCSV(filePath);
 
-        console.log('Data loaded from CSV:', data);
+        //console.log('Data loaded from CSV:', data);
 
         const page = await browser.newPage();
         page.on('console', (msg) => console.log('Browser console:', msg.text()));
         page.on('pageerror', (err) => console.error('Page error:', err));
 
+        // Set up the basic HTML structure
         await page.setContent(`
             <!DOCTYPE html>
             <html>
                 <head>
-                    <title>RAWGraphs Chart</title>
+                    <title>RAWGraphs Beeswarm Chart</title>
                 </head>
                 <body>
                     <div id="chart"></div>
@@ -43,6 +44,9 @@ async function generateChart() {
             </html>
         `);
 
+          
+
+        // Load RAWGraphs and create the chart
         const loaded = await page.evaluate(
             async (data) => {
                 function loadScript(src) {
@@ -55,32 +59,44 @@ async function generateChart() {
                     });
                 }
 
+                
                 try {
                     await loadScript('https://cdn.jsdelivr.net/npm/@rawgraphs/rawgraphs-core');
                     await loadScript('https://cdn.jsdelivr.net/npm/@rawgraphs/rawgraphs-charts');
 
+                    // Mapping for beeswarm chart
+                    // Adjust these fields according to your CSV column names
                     const mapping = {
-                        x: { value: 'size' },   // Use 'size' for the x-axis
-                        y: { value: 'price' },  // Use 'price' for the y-axis
-                        size: { value: 'size' }, // Use 'size' for bubble size
-                        color: { value: 'cat' }, // Use 'cat' for grouping (colors)
-                        series: { value: 'cat' } // Use 'cat' for grouping (colors)
+                        xValue: { value: ['sentiment_vader'] }, // Horizontal placement based on sentiment
+                        series: { value: ['topic_nmf'] },      // Group points by topic
+                        color: { value: ['topic_nmf'] },       // Color coding by topic
+                        size: { value: ['likes'] },            // Size of points based on likes
                     };
+
 
                     const chartContainer = document.getElementById('chart');
                     if (!chartContainer) throw new Error('Chart container not found');
 
-                    const viz = raw.chart(rawcharts.bubblechart, {
+                    data.forEach((d) => {
+                        d.likes = parseFloat(d.likes) || 0; // Convert likes to number
+                        d.sentiment_vader = parseFloat(d.sentiment_vader) || 0; // Convert sentiment to number
+                    });
+
+                    // Create beeswarm chart
+                    const viz = raw.chart(rawcharts.beeswarm, {
                         data: data,
                         mapping: mapping,
                         options: {
                             width: 800,
                             height: 600,
-                            margin: { top: 50, right: 50, bottom: 50, left: 50 },
+                            margin: { top: 50, right: 50, bottom: 50, left: 100 },                           
+                            padding: 1,                    // Space between points
+                            orientation: 'horizontal',     // 'horizontal' or 'vertical'
+                            showLabels: false              // Show/hide labels
                         },
                     });
-
                     viz.renderToDOM(chartContainer);
+            
 
                     const svgElement = document.querySelector('#chart svg');
                     if (!svgElement) throw new Error('SVG element not found');
@@ -94,8 +110,12 @@ async function generateChart() {
                     return { success: false, error: error.message };
                 }
             },
-            data // Pass the data to the browser context
+            data
         );
+
+        if (!loaded.success) {
+            throw new Error(`Failed to generate chart: ${loaded.error}`);
+        }
 
         if (loaded && loaded.success) {
             const svgContent = loaded.svg;
@@ -110,7 +130,7 @@ async function generateChart() {
         </svg>`;
         
                     // Save to file
-                    const outputPath = path.resolve('charts/bubblechart.svg');
+                    const outputPath = path.resolve('charts/beeswarm_chart.svg');
                     await fs.promises.writeFile(outputPath, formattedSVG);
                     console.log(`SVG saved to ${outputPath}`);
                 } catch (error) {
@@ -119,17 +139,13 @@ async function generateChart() {
             } else {
                 console.error('No SVG content found');
             }
-        } else {
-            console.error('Chart creation failed:', loaded?.error || 'unknown error');
         }
-
-        await new Promise((resolve) => setTimeout(resolve, 10000));
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error generating chart:', error);
     } finally {
         await browser.close();
     }
 }
 
-// Run the function
-generateChart().catch(console.error);
+// Execute the function
+generateBeeswarmChart().catch(console.error);
